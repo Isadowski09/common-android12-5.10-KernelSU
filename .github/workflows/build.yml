@@ -33,10 +33,38 @@ jobs:
           path: common-android12-5.10-KernelSU
           submodules: 'recursive'
           
-    - name: Build GKI
-      run: |
-        cd common-android12-5.10-KernelSU
-        LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
+    - name: Build GKI (Droidspaces Ready)
+  run: |
+    set -e
+
+    cd common-android12-5.10-KernelSU
+
+    echo "== Enter kernel source =="
+    cd common
+
+    echo "== Load base config =="
+    make gki_defconfig
+
+    echo "== Applying SYSVIPC patch =="
+    patch -p1 < ../../patchs/001_sysvipc.patch
+
+    echo "== Applying POSIX_MQUEUE patch =="
+    patch -p1 < ../../patchs/002_mqueue.patch
+
+    echo "== Enabling Droidspaces configs =="
+
+    scripts/config --enable CONFIG_SYSVIPC
+    scripts/config --enable CONFIG_POSIX_MQUEUE
+    scripts/config --enable CONFIG_IPC_NS
+    scripts/config --enable CONFIG_PID_NS
+
+    echo "== Finalizing config =="
+    make olddefconfig
+
+    cd ..
+
+    echo "== Building Kernel =="
+    LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
         
     - name: Copy SDK
       run: |
