@@ -1,65 +1,71 @@
-name: build
+name: Build Kernel (AnyKernel3)
 
 on:
   workflow_dispatch:
-  push:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-    - name: Install dependencies
-      run: |
-        sudo apt update
-        sudo apt install -y bc bison flex libssl-dev libelf-dev \
-        python3 git wget curl p7zip-full zstd
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y bc bison build-essential curl flex git libssl-dev lz4 zip unzip
 
-    - name: Checkout repo
-      uses: actions/checkout@v4
+      - name: Clone toolchain
+        run: |
+          git clone --depth=1 https://github.com/llvm/llvm-project clang
 
-    - name: Build GKI (Namespace Ready)
-      run: |
-        set -e
+      - name: Setup environment
+        run: |
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export PATH=$PWD/clang/bin:$PATH
 
-        echo "== DEBUG: show repo root =="
-        ls -l
+      - name: Build kernel (CLEAN FIXED)
+        run: |
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export PATH=$PWD/clang/bin:$PATH
 
-        echo "== DEBUG: show patches =="
-        ls -l patches
+          mkdir -p out
 
-        cd common
+          cd common
 
-        echo "== Load base config =="
-        make gki_defconfig
+          # CLEAN PROPERLY FIRST (this fixes your error)
+          make O=../out mrproper
 
-        echo "== Apply patches (FIXED PATH) =="
-        patch -p1 < $GITHUB_WORKSPACE/patches/001_sysvipc.patch
-        patch -p1 < $GITHUB_WORKSPACE/patches/002_mqueue.patch
+          # Load config
+          make O=../out gki_defconfig
 
-        echo "== Enable namespace configs =="
-        scripts/config --enable CONFIG_SYSVIPC
-        scripts/config --enable CONFIG_POSIX_MQUEUE
-        scripts/config --enable CONFIG_IPC_NS
-        scripts/config --enable CONFIG_PID_NS
-        scripts/config --enable CONFIG_USER_NS
+          # Enable namespaces (your goal)
+          scripts/config --file ../out/.config \
+            -e CONFIG_USER_NS \
+            -e CONFIG_PID_NS \
+            -e CONFIG_SYSVIPC
 
-        echo "== Finalize config =="
-        make olddefconfig
+          make O=../out olddefconfig
 
-        cd ..
+          # Build kernel (ONLY ONCE)
+          make -j$(nproc) O=../out \
+            CC=clang \
+            LLVM=1 LLVM_IAS=1
 
-        echo "== Build kernel =="
-        LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
+      - name: Prepare AnyKernel3 zip
+        run: |
+          git clone https://github.com/osm0sis/AnyKernel3 AnyKernel3
 
-    - name: Extract Image
-      run: |
-        mkdir -p output
-        find . -name Image -type f | head -n 1 | xargs -I {} cp {} output/Image
+          cp out/arch/arm64/boot/Image AnyKernel3/
 
-    - name: Upload Image
-      uses: actions/upload-artifact@v4
-      with:
-        name: kernel-image
-        path: output/Image
+          cd AnyKernel3
+          zip -r9 ../kernel.zip *
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-anykernel3
+          path: kernel.zip
