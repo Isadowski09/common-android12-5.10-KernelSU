@@ -17,7 +17,7 @@ jobs:
         python3 git wget curl p7zip-full zstd
 
     - name: Checkout repo
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         path: kernel
 
@@ -56,7 +56,7 @@ jobs:
         find . -name Image -type f | head -n 1 | xargs -I {} cp {} output/Image
 
     - name: Upload Image
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: kernel-image
         path: kernel/output/Image
