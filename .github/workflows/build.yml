@@ -1,82 +1,62 @@
 name: build
 
-permissions:
-  contents: write
-
-concurrency:
-  group: build-${{ github.head_ref }}
-  cancel-in-progress: true
-
-on: [push, pull_request]
+on:
+  workflow_dispatch:
+  push:
 
 jobs:
   build:
-    if: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) }}
     runs-on: ubuntu-latest
 
     steps:
 
-    - name: Setup build deps
+    - name: Install deps
       run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential make cmake p7zip-full p7zip-rar
+        sudo apt update
+        sudo apt install -y bc bison flex libssl-dev libelf-dev \
+        python3 git wget curl p7zip-full zstd
 
-    - name: Checkout Repo
-      uses: actions/checkout@v4
+    - name: Checkout repo
+      uses: actions/checkout@v3
       with:
-        path: common-android12-5.10-KernelSU
-        submodules: recursive
+        path: kernel
 
     - name: Build GKI (Droidspaces Ready)
       run: |
         set -e
 
-        cd common-android12-5.10-KernelSU
+        cd kernel/common
 
-        echo "== Enter kernel source =="
-        cd common
+        echo "== Load base config =="
+        make gki_defconfig
 
-        echo "== Cleaning tree =="
-        make mrproper
+        echo "== Apply patches =="
+        patch -p1 < ../../patches/001_sysvipc.patch
+        patch -p1 < ../../patches/002_mqueue.patch
 
-        echo "== Applying patches =="
-        patch -p1 < ../patches/001_sysvipc.patch
-        patch -p1 < ../patches/002_mqueue.patch
+        echo "== Enable required configs =="
+        scripts/config --enable CONFIG_SYSVIPC
+        scripts/config --enable CONFIG_POSIX_MQUEUE
+        scripts/config --enable CONFIG_IPC_NS
+        scripts/config --enable CONFIG_PID_NS
+
+        echo "== Finalizing config =="
+        make olddefconfig
 
         cd ..
 
-        echo "== Building Kernel =="
+        echo "== Build kernel =="
         LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
 
-    - name: Copy SDK
+    - name: Extract Image
       run: |
-        cd common-android12-5.10-KernelSU
-        cp -r out/android12-5.10/common/arch/arm64/include/generated/asm common/include/
-        cp -r out/android12-5.10/common/arch/arm64/include/generated/uapi/asm common/include/
-        cp -r out/android12-5.10/common/arch/arm64/include/generated/uapi/asm common/include/uapi/
-        cp -r out/android12-5.10/common/include/generated common/include/
-        cp -r out/android12-5.10/common/include/config common/include/
-        cp out/android12-5.10/common/scripts/basic/fixdep common/scripts/basic/
-        cp out/android12-5.10/common/scripts/mod/modpost common/scripts/mod/
-        cp out/android12-5.10/common/scripts/module.lds common/scripts/
-        cp out/android12-5.10/common/Module.symvers common/
+        cd kernel
+        mkdir output
 
-    - name: Package GKI
-      run: |
-        mv common-android12-5.10-KernelSU GKI-android12-5.10-kit
-        7z a GKI-android12-5.10-kit.zip GKI-android12-5.10-kit/common
+        find . -name Image -type f | head -n 1 | xargs -I {} cp {} output/Image
 
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
+    - name: Upload Image
+      uses: actions/upload-artifact@v3
       with:
-        name: GKI-android12-5.10-kit
-        path: GKI-android12-5.10-kit.zip
-
-    - name: Release
-      uses: softprops/action-gh-release@v1
-      if: ${{ startsWith(github.ref, 'refs/tags/') }}
-      with:
-        prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') || contains(github.ref, '-pre') }}
-        files: GKI-android12-5.10-kit.zip
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        name: kernel-image
+        path: kernel/output/Image
