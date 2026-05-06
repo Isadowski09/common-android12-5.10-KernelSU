@@ -10,7 +10,7 @@ jobs:
 
     steps:
 
-    - name: Install deps
+    - name: Install dependencies
       run: |
         sudo apt update
         sudo apt install -y bc bison flex libssl-dev libelf-dev \
@@ -18,29 +18,34 @@ jobs:
 
     - name: Checkout repo
       uses: actions/checkout@v4
-      with:
-        path: kernel
 
-    - name: Build GKI (Droidspaces Ready)
+    - name: Build GKI (Namespace Ready)
       run: |
         set -e
 
-        cd kernel/common
+        echo "== DEBUG: show repo root =="
+        ls -l
+
+        echo "== DEBUG: show patches =="
+        ls -l patches
+
+        cd common
 
         echo "== Load base config =="
         make gki_defconfig
 
-        echo "== Apply patches =="
-        patch -p1 < ../../patches/001_sysvipc.patch
-        patch -p1 < ../../patches/002_mqueue.patch
+        echo "== Apply patches (FIXED PATH) =="
+        patch -p1 < $GITHUB_WORKSPACE/patches/001_sysvipc.patch
+        patch -p1 < $GITHUB_WORKSPACE/patches/002_mqueue.patch
 
-        echo "== Enable required configs =="
+        echo "== Enable namespace configs =="
         scripts/config --enable CONFIG_SYSVIPC
         scripts/config --enable CONFIG_POSIX_MQUEUE
         scripts/config --enable CONFIG_IPC_NS
         scripts/config --enable CONFIG_PID_NS
+        scripts/config --enable CONFIG_USER_NS
 
-        echo "== Finalizing config =="
+        echo "== Finalize config =="
         make olddefconfig
 
         cd ..
@@ -50,13 +55,11 @@ jobs:
 
     - name: Extract Image
       run: |
-        cd kernel
-        mkdir output
-
+        mkdir -p output
         find . -name Image -type f | head -n 1 | xargs -I {} cp {} output/Image
 
     - name: Upload Image
       uses: actions/upload-artifact@v4
       with:
         name: kernel-image
-        path: kernel/output/Image
+        path: output/Image
