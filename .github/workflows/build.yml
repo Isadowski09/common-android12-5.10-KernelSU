@@ -7,25 +7,19 @@ concurrency:
   group: build-${{ github.head_ref }}
   cancel-in-progress: true
 
-on:
-  push:
-  pull_request:
-  workflow_dispatch:
+on: [push, pull_request]
 
 jobs:
   build:
     if: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) }}
     runs-on: ubuntu-latest
 
-    env:
-      BUILD_TYPE: Release
-
     steps:
 
     - name: Setup build deps
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential make cmake p7zip-full p7zip-rar flex bison bc
+        sudo apt-get install -y build-essential make cmake p7zip-full p7zip-rar
 
     - name: Checkout Repo
       uses: actions/checkout@v4
@@ -42,26 +36,12 @@ jobs:
         echo "== Enter kernel source =="
         cd common
 
-        echo "== Load base config =="
-        make gki_defconfig
+        echo "== Cleaning tree =="
+        make mrproper
 
-        echo "== Verify patches exist =="
-        ls ../patches
-
-        echo "== Applying SYSVIPC patch =="
+        echo "== Applying patches =="
         patch -p1 < ../patches/001_sysvipc.patch
-
-        echo "== Applying POSIX_MQUEUE patch =="
         patch -p1 < ../patches/002_mqueue.patch
-
-        echo "== Enabling Droidspaces configs =="
-        scripts/config --enable CONFIG_SYSVIPC
-        scripts/config --enable CONFIG_POSIX_MQUEUE
-        scripts/config --enable CONFIG_IPC_NS
-        scripts/config --enable CONFIG_PID_NS
-
-        echo "== Finalizing config =="
-        make olddefconfig
 
         cd ..
 
